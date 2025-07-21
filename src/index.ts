@@ -1,72 +1,43 @@
-/**
- * @name ShowIgnoredEmbeds
- * @description Display messages with embeds from users you've ignored.
- * @version 1.0.0
- * @author You
- */
-
-import { React } from "@vendetta/metro/common";
+import { findByProps } from "@vendetta/metro";
 import { after } from "@vendetta/patcher";
-import { findByName } from "@vendetta/metro";
-import { findInReactTree } from "@vendetta/utils";
-import { storage } from "@vendetta/plugin"; // For settings
-import { SwitchRow } from "@vendetta/ui/components";
-import { showToast } from "@vendetta/ui/toasts";
+import { React } from "@vendetta/metro/common";
+import { storage } from "@vendetta/plugin";
+import Settings from "./Settings";
+import { registerSettings, unregisterSettings } from "@vendetta/settings";
 
-// Root component: settings toggle
-export const Settings = () => {
-  const [enabled, setEnabled] = React.useState<boolean>(storage.showIgnoredEmbeds ?? true);
+const MessageComponent = findByProps("MessageContent")?.default;
+let unpatch: () => void;
 
-  const onToggle = (val: boolean) => {
-    storage.showIgnoredEmbeds = val;
-    setEnabled(val);
-    showToast(`Show Ignored Embeds ${val ? "Enabled" : "Disabled"}`, { type: "info" });
-  };
+function shouldShowEmbed(message: any): boolean {
+  if (!storage.showIgnoredEmbeds) return false;
+  return message?.isBlocked === true && message?.embeds?.length > 0;
+}
 
-  return (
-    <SwitchRow
-      value={enabled}
-      onValueChange={onToggle}
-      label="Show ignored user embeds"
-      description="Reveal images/videos posted by users you've ignored."
-    />
-  );
-};
-
-// Run on plugin load
-export const onLoad = () => {
-  const Message = findByName("Message", false);
-  if (!Message) {
-    console.error("[ShowIgnored] Failed to find Message component.");
-    return;
-  }
-
-  after("type", Message, (args, res) => {
-    if (!storage.showIgnoredEmbeds) return res;
-
-    // If message is from ignored user but has embeds, display them
-    const msg = args[0];
-    if (msg.ignored && Array.isArray(msg.embeds) && msg.embeds.length > 0) {
-      const embedSection = findInReactTree(res, (r) =>
-        r?.type?.displayName === "MessageContent" && Array.isArray(r.props.children)
+function InjectEmbedFix() {
+  unpatch = after("type", MessageComponent, ([props]: any, res: any) => {
+    if (shouldShowEmbed(props?.message)) {
+      const embeds = props.message.embeds;
+      res.props.children.push(
+        React.createElement(
+          "View",
+          { style: { marginTop: 6 } },
+          embeds.map((embed: any, i: number) =>
+            React.createElement("Text", { style: { color: "gray" }, key: i }, embed?.url || "[embed]")
+          )
+        )
       );
-      if (embedSection) {
-        msg.embeds.forEach((e: any) => {
-          embedSection.props.children.push(
-            React.createElement(
-              findByName("EmbedView") || "View",
-              { key: `show-ignored-${e.id}`, embed: e, style: { marginTop: 8 } },
-              null
-            )
-          );
-        });
-      }
     }
-
     return res;
   });
+}
+
+export const onLoad = () => {
+  storage.showIgnoredEmbeds ??= true;
+  InjectEmbedFix();
+  registerSettings("ShowIgnoredEmbeds", "Show Ignored Embeds", () => React.createElement(Settings));
 };
 
 export const onUnload = () => {
-  // Vendetta unpatches automatically between reloads—no explicit unpatch needed.
+  unpatch?.();
+  unregisterSettings("ShowIgnoredEmbeds");
 };
