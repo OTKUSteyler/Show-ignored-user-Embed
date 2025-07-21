@@ -3,24 +3,21 @@ import { after } from "@vendetta/patcher";
 import { storage } from "@vendetta/plugin";
 import Settings from "./Settings";
 
-// Get the MessageContent component which handles rendering messages
+// Get MessageContent, which renders each message in chat
 const MessageContent = findByProps("getMessageContent");
 
 let unpatch: () => void;
 
 export const onLoad = () => {
-  // Default storage flag
   if (storage.showIgnoredEmbeds === undefined) storage.showIgnoredEmbeds = true;
 
   unpatch = after("getMessageContent", MessageContent, (args, ret) => {
-    const message = args?.[0];
+    const message = args?.[0]?.message;
 
-    // Check if message is from ignored user
-    if (message?.state?.isBlocked && storage.showIgnoredEmbeds) {
+    if (args?.[0]?.isBlocked && storage.showIgnoredEmbeds && message) {
       // Force showing embeds
-      message.message?.blocked = false;
-      message.message?.state?.isBlocked = false;
-      message.isBlocked = false;
+      message.blocked = false;
+      args[0].isBlocked = false;
     }
 
     return ret;
